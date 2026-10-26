@@ -1,10 +1,12 @@
 /*
  * Timed Event – adds a timer button to the header of every more-info dialog.
- * The button opens a small dialog to run an action on the entity after X minutes/hours.
+ * The button opens a panel (a more-info "child view", like Settings) to run an
+ * action on the entity in X minutes/hours or at a given time, optionally repeating.
  * Timers live in the backend (custom_components/timed_event) and survive restarts.
  */
 (() => {
   const TAG = "timed-event-button";
+  const PANEL_TAG = "timed-event-panel";
   if (customElements.get(TAG)) return;
 
   // mdi:timer-outline
@@ -20,26 +22,31 @@
       action: "Action",
       value: "Value",
       run_in: "Run in",
+      minutes: "minutes",
+      hours: "hours",
       mode_in: "In",
       mode_at: "At",
-      run_at: "Date & time",
+      time: "Time",
+      date: "Date",
+      today: "Today",
+      tomorrow: "Tomorrow",
+      pick_date: "Choose date",
+      auto_date: "Automatic (today/tomorrow)",
       repeat: "Repeat",
       repeat_interval: "Repeat every {time}",
       repeat_daily: "Repeat every day at {time}",
       every: "every {time}",
       daily: "daily {time}",
-      invalid_at: "Pick a time in the future",
-      min_interval: "Repeat interval must be at least 1 minute",
-      minutes: "minutes",
-      hours: "hours",
       schedule: "Schedule",
       close: "Close",
       pending: "Scheduled",
       none: "Nothing scheduled",
       cancel: "Cancel timer",
-      runs_at: "Runs at {time}",
+      runs_at: "Runs {time}",
       invalid_delay: "Enter a time greater than 0",
       invalid_value: "Enter a valid value",
+      invalid_at: "Pick a time in the future",
+      min_interval: "Repeat interval must be at least 1 minute",
       turn_on: "Turn on",
       turn_off: "Turn off",
       toggle: "Toggle",
@@ -75,26 +82,31 @@
       action: "Aktion",
       value: "Wert",
       run_in: "Ausführen in",
+      minutes: "Minuten",
+      hours: "Stunden",
       mode_in: "In",
       mode_at: "Um",
-      run_at: "Datum & Uhrzeit",
+      time: "Uhrzeit",
+      date: "Datum",
+      today: "Heute",
+      tomorrow: "Morgen",
+      pick_date: "Datum wählen",
+      auto_date: "Automatisch (heute/morgen)",
       repeat: "Wiederholen",
       repeat_interval: "Alle {time} wiederholen",
       repeat_daily: "Täglich um {time} wiederholen",
       every: "alle {time}",
       daily: "täglich {time}",
-      invalid_at: "Bitte einen Zeitpunkt in der Zukunft wählen",
-      min_interval: "Das Intervall muss mindestens 1 Minute sein",
-      minutes: "Minuten",
-      hours: "Stunden",
       schedule: "Planen",
       close: "Schließen",
       pending: "Geplant",
       none: "Nichts geplant",
       cancel: "Timer abbrechen",
-      runs_at: "Wird um {time} ausgeführt",
+      runs_at: "Wird ausgeführt: {time}",
       invalid_delay: "Bitte eine Zeit größer 0 eingeben",
       invalid_value: "Bitte einen gültigen Wert eingeben",
+      invalid_at: "Bitte einen Zeitpunkt in der Zukunft wählen",
+      min_interval: "Das Intervall muss mindestens 1 Minute sein",
       turn_on: "Einschalten",
       turn_off: "Ausschalten",
       toggle: "Umschalten",
@@ -288,12 +300,6 @@
     return m ? `${h} h ${m} min` : `${h} h`;
   }
 
-  // Value for <input type="datetime-local"> in browser time.
-  function toLocalInput(date) {
-    const pad = (n) => String(n).padStart(2, "0");
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  }
-
   function formatRemaining(ms) {
     let s = Math.max(0, Math.round(ms / 1000));
     const d = Math.floor(s / 86400);
@@ -306,195 +312,205 @@
     return d ? `${d}d ${hms}` : hms;
   }
 
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const dateStr = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+  // "Today" / "Tomorrow" / "Thu, 30 Oct"
+  function dayLabel(hass, d) {
+    const today = new Date();
+    const tomorrow = new Date();
+    tomorrow.setDate(today.getDate() + 1);
+    if (d.toDateString() === today.toDateString()) return tr(hass, "today");
+    if (d.toDateString() === tomorrow.toDateString()) return tr(hass, "tomorrow");
+    try {
+      return d.toLocaleDateString(hass.locale?.language || hass.language, { weekday: "short", day: "numeric", month: "short" });
+    } catch {
+      return d.toDateString();
+    }
+  }
+
   // ---------------------------------------------------------------------------
-  // The button + dialog element
+  // HA's own pickers (ha-selector → ha-time-input / ha-date-input) are lazy-loaded
+  // by the frontend. Loading the tile card editor pulls in ha-form → ha-selector.
   // ---------------------------------------------------------------------------
 
-  const CSS = `
-    :host { display: inline-flex; position: relative; }
-    .wrap { position: relative; display: inline-flex; }
-    ha-icon-button.active { color: var(--primary-color); }
-    .badge {
-      position: absolute; top: 4px; right: 2px; min-width: 16px; height: 16px; padding: 0 4px;
-      box-sizing: border-box; border-radius: 8px; font-size: 11px; line-height: 16px; text-align: center;
-      background: var(--primary-color); color: var(--text-primary-color, #fff); pointer-events: none;
-    }
-    .badge[hidden] { display: none; }
-    dialog {
-      border: none; padding: 0; border-radius: var(--ha-dialog-border-radius, 24px);
-      width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
-      background: var(--ha-dialog-surface-background, var(--card-background-color, #1c1c1c));
-      color: var(--primary-text-color); box-shadow: 0 8px 32px rgba(0,0,0,.5);
-      font-family: var(--ha-font-family-body, var(--paper-font-body1_-_font-family, Roboto, sans-serif));
-    }
-    dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
-    .head { display: flex; align-items: center; gap: 12px; padding: 16px 12px 8px 24px; }
-    .head .titles { flex: 1; min-width: 0; }
-    .title { font-size: 20px; font-weight: 500; }
-    .sub { font-size: 14px; color: var(--secondary-text-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .body { padding: 8px 24px 8px; display: flex; flex-direction: column; gap: 14px; }
+  let selectorPromise;
+  function loadHaSelector() {
+    if (customElements.get("ha-selector")) return Promise.resolve(true);
+    selectorPromise ??= (async () => {
+      const timeout = new Promise((r) => setTimeout(r, 5000));
+      try {
+        await Promise.race([
+          (async () => {
+            const helpers = await globalThis.loadCardHelpers();
+            helpers.createCardElement({ type: "tile", entity: "sun.sun" });
+            await customElements.whenDefined("hui-tile-card");
+            await customElements.get("hui-tile-card").getConfigElement();
+            await customElements.whenDefined("ha-selector");
+          })(),
+          timeout,
+        ]);
+      } catch (err) {
+        console.warn("timed_event: could not load HA pickers, using browser inputs", err);
+      }
+      return !!customElements.get("ha-selector");
+    })();
+    return selectorPromise;
+  }
+
+  // ---------------------------------------------------------------------------
+  // The panel (shown as a more-info child view, or inside a fallback <dialog>)
+  // ---------------------------------------------------------------------------
+
+  const PANEL_CSS = `
+    :host { display: block; }
+    .body { display: flex; flex-direction: column; gap: 16px; padding: 8px 0; }
     label { display: block; font-size: 12px; color: var(--secondary-text-color); margin-bottom: 4px; }
-    select, input {
-      width: 100%; box-sizing: border-box; height: 44px; padding: 0 12px; font: inherit; font-size: 16px;
+    select, input:not([type="checkbox"]) {
+      width: 100%; box-sizing: border-box; height: 48px; padding: 0 12px; font: inherit; font-size: 16px;
       color: var(--primary-text-color); background: var(--input-fill-color, var(--secondary-background-color, rgba(127,127,127,.12)));
-      border: 1px solid var(--divider-color, rgba(127,127,127,.3)); border-radius: 10px; outline: none;
+      border: 1px solid var(--divider-color, rgba(127,127,127,.3)); border-radius: 10px; outline: none; color-scheme: light dark;
     }
     select:focus, input:focus { border-color: var(--primary-color); }
     select option { background: var(--card-background-color, #1c1c1c); color: var(--primary-text-color); }
+    ha-selector { display: block; }
     .row { display: flex; gap: 8px; }
     .row input { flex: 1; }
     .row select { flex: 0 0 auto; width: auto; }
     .with-unit { display: flex; align-items: center; gap: 8px; }
     .with-unit span { color: var(--secondary-text-color); }
-    .seg { display: inline-flex; border: 1px solid var(--divider-color, rgba(127,127,127,.4)); border-radius: 18px; overflow: hidden; margin-bottom: 8px; }
-    .seg button {
-      font: inherit; font-size: 14px; padding: 6px 18px; border: none; cursor: pointer;
-      background: transparent; color: var(--primary-text-color);
-    }
+    .seg { display: inline-flex; border: 1px solid var(--divider-color, rgba(127,127,127,.4)); border-radius: 18px; overflow: hidden; margin-bottom: 12px; }
+    .seg button { font: inherit; font-size: 14px; padding: 6px 20px; border: none; cursor: pointer; background: transparent; color: var(--primary-text-color); }
     .seg button.on { background: var(--primary-color); color: var(--text-primary-color, #fff); }
     [hidden] { display: none !important; }
-    input[type="datetime-local"] { color-scheme: light dark; }
-    .check { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; color: var(--primary-text-color); margin: 0; }
-    .check input { width: 20px; height: 20px; margin: 0; padding: 0; accent-color: var(--primary-color); flex: 0 0 auto; }
-    .rep { font-size: 12px; color: var(--primary-color); }
     .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     .chip {
-      font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 16px; cursor: pointer;
+      font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 16px; cursor: pointer; font-variant-numeric: tabular-nums;
       background: transparent; color: var(--primary-text-color); border: 1px solid var(--divider-color, rgba(127,127,127,.4));
     }
     .chip:hover { border-color: var(--primary-color); color: var(--primary-color); }
+    .dateline { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 14px; }
+    .dateline .day { flex: 1; color: var(--secondary-text-color); }
+    .link { font: inherit; font-size: 14px; background: none; border: none; color: var(--primary-color); cursor: pointer; padding: 4px 0; }
+    #dateHost { margin-top: 8px; }
+    .check { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; color: var(--primary-text-color); margin: 0; }
+    .check input { width: 20px; height: 20px; margin: 0; accent-color: var(--primary-color); flex: 0 0 auto; }
     .hint { font-size: 13px; color: var(--secondary-text-color); margin-top: 6px; min-height: 1em; }
     .error { color: var(--error-color, #db4437); font-size: 13px; }
     .error:empty, #valueRow:empty { display: none; }
     h3 { margin: 0 0 6px; font-size: 14px; font-weight: 500; color: var(--secondary-text-color); }
     ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-    li {
-      display: flex; align-items: center; gap: 8px; padding: 8px 4px 8px 12px; border-radius: 10px;
-      background: var(--secondary-background-color, rgba(127,127,127,.12));
-    }
+    li { display: flex; align-items: center; gap: 8px; padding: 8px 4px 8px 12px; border-radius: 10px; background: var(--secondary-background-color, rgba(127,127,127,.12)); }
     li .info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
     li .when { font-size: 13px; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+    .rep { font-size: 12px; color: var(--primary-color); }
     .empty { font-size: 14px; color: var(--secondary-text-color); }
-    .buttons { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 24px 20px; }
-    .btn {
-      font: inherit; font-size: 14px; font-weight: 500; padding: 10px 18px; border-radius: 20px; cursor: pointer; border: none;
-      background: transparent; color: var(--primary-color);
-    }
+    .buttons { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 0 4px; }
+    .btn { font: inherit; font-size: 14px; font-weight: 500; padding: 10px 20px; border-radius: 20px; cursor: pointer; border: none; background: transparent; color: var(--primary-color); }
     .btn.primary { background: var(--primary-color); color: var(--text-primary-color, #fff); }
     .btn:disabled { opacity: .5; cursor: default; }
   `;
 
-  class TimedEventButton extends HTMLElement {
+  const QUICK_TIMES = ["06:00", "07:00", "08:00", "12:00", "18:00", "22:00"];
+
+  class TimedEventPanel extends HTMLElement {
     constructor() {
       super();
+      this.attachShadow({ mode: "open" });
       this._hass = null;
+      this._params = null;
       this._entityId = null;
+      this._rendered = false;
       this._actions = [];
+      this._mode = "in";
+      const next = new Date(Math.ceil(Date.now() / 3600000) * 3600000);
+      this._time = `${pad2(next.getHours())}:00`; // "HH:MM", local
+      this._date = null; // "YYYY-MM-DD", or null = next occurrence of _time
       this._tick = null;
-      this._onStore = () => {
-        this._updateBadge();
-        if (this._dlg.open) this._renderPending();
-      };
-
-      const root = this.attachShadow({ mode: "open" });
-      root.innerHTML = `<style>${CSS}</style>
-        <div class="wrap"><ha-icon-button id="btn"></ha-icon-button><span class="badge" hidden></span></div>
-        <dialog id="dlg"></dialog>`;
-      this._btn = root.getElementById("btn");
-      this._badge = root.querySelector(".badge");
-      this._dlg = root.getElementById("dlg");
-      this._btn.path = ICON;
-      this._btn.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        this.open();
-      });
-
-      // Keep keys and clicks inside our dialog from reaching the more-info dialog
-      // (Escape would close it, letters would trigger HA's global shortcuts).
-      for (const type of ["keydown", "keyup", "keypress", "click"]) {
-        this._dlg.addEventListener(type, (ev) => ev.stopPropagation());
+      this._onStore = () => this._renderPending();
+      // Keep typing from triggering HA's global keyboard shortcuts.
+      for (const type of ["keydown", "keyup", "keypress"]) {
+        this.shadowRoot.addEventListener(type, (ev) => {
+          if (ev.key !== "Escape") ev.stopPropagation();
+        });
       }
-      this._dlg.addEventListener("click", (ev) => {
-        if (ev.target === this._dlg) this.close(); // backdrop click
-      });
-      this._dlg.addEventListener("close", () => this._stopTick());
     }
 
+    // Set by the more-info dialog (dynamicElement) or by the fallback dialog.
     set hass(hass) {
       this._hass = hass;
       ensureSubscribed(hass);
-      this._btn.label = tr(hass, "title");
-      this._updateBadge();
+      this.shadowRoot.querySelectorAll("ha-selector").forEach((s) => (s.hass = hass));
+      this._maybeRender();
     }
 
     get hass() {
       return this._hass;
     }
 
-    set entityId(id) {
-      if (id === this._entityId) return;
-      this._entityId = id;
-      this.close();
-      this._updateBadge();
+    set params(params) {
+      this._params = params;
+      if (params?.entityId !== this._entityId) {
+        this._entityId = params?.entityId;
+        this._rendered = false;
+        this._maybeRender();
+      }
     }
 
-    get entityId() {
-      return this._entityId;
+    get params() {
+      return this._params;
     }
+
+    set entry(_entry) {}
 
     connectedCallback() {
       store.listeners.add(this._onStore);
-      this._updateBadge();
+      this._maybeRender();
+      this._startTick();
     }
 
     disconnectedCallback() {
       store.listeners.delete(this._onStore);
-      this.close();
-    }
-
-    _timersForEntity() {
-      return store.timers.filter((t) => t.entity_id === this._entityId);
-    }
-
-    _updateBadge() {
-      const n = this._entityId ? this._timersForEntity().length : 0;
-      this._badge.hidden = n === 0;
-      this._badge.textContent = String(n);
-      this._btn.classList.toggle("active", n > 0);
-    }
-
-    close() {
-      if (this._dlg.open) this._dlg.close();
       this._stopTick();
     }
 
-    open() {
+    async _maybeRender() {
+      if (this._rendered || !this._hass || !this._entityId || !this.isConnected) return;
+      this._rendered = true;
+      this._useHa = await loadHaSelector();
+      this._render();
+    }
+
+    _t(key, vars) {
+      return tr(this._hass, key, vars);
+    }
+
+    _$(sel) {
+      return this.shadowRoot.querySelector(sel);
+    }
+
+    _render() {
       const hass = this._hass;
-      if (!hass || !this._entityId) return;
+      const t = (k, v) => this._t(k, v);
       const st = hass.states[this._entityId];
       this._actions = actionsFor(hass, this._entityId);
-      const name = st?.attributes?.friendly_name || this._entityId;
-      const t = (k, v) => tr(hass, k, v);
 
       // Preselect the action that changes the current state.
       let defIdx = 0;
       const want = st?.state === "on" ? "turn_off" : st?.state === "off" ? "turn_on" : null;
       if (want) defIdx = Math.max(0, this._actions.findIndex((a) => a.key === want));
 
-      const chips = [
-        [5, 60], [15, 60], [30, 60], [1, 3600], [2, 3600], [8, 3600],
-      ]
+      const inChips = [[5, 60], [15, 60], [30, 60], [1, 3600], [2, 3600], [8, 3600]]
         .map(([v, u]) => `<button class="chip" data-amount="${v}" data-unit="${u}">${v} ${u === 60 ? "min" : "h"}</button>`)
         .join("");
+      const timeChips = QUICK_TIMES.map((v) => {
+        const [h, m] = v.split(":").map(Number);
+        const d = new Date();
+        d.setHours(h, m, 0, 0);
+        return `<button class="chip" data-time="${v}">${esc(formatClock(hass, d, true))}</button>`;
+      }).join("");
 
-      this._dlg.innerHTML = `
-        <div class="head">
-          <div class="titles">
-            <div class="title">${esc(t("title"))}</div>
-            <div class="sub">${esc(name)}</div>
-          </div>
-          <ha-icon-button id="x"></ha-icon-button>
-        </div>
+      this.shadowRoot.innerHTML = `<style>${PANEL_CSS}</style>
         <div class="body">
           <section><h3>${esc(t("pending"))}</h3><div id="pending"></div></section>
           <div>
@@ -506,7 +522,7 @@
           <div id="valueRow"></div>
           <div>
             <div class="seg" id="mode">
-              <button data-mode="in" class="on">${esc(t("mode_in"))}</button>
+              <button data-mode="in">${esc(t("mode_in"))}</button>
               <button data-mode="at">${esc(t("mode_at"))}</button>
             </div>
             <div id="inBox">
@@ -518,11 +534,16 @@
                   <option value="3600">${esc(t("hours"))}</option>
                 </select>
               </div>
-              <div class="chips">${chips}</div>
+              <div class="chips" id="inChips">${inChips}</div>
             </div>
-            <div id="atBox" hidden>
-              <label for="at">${esc(t("run_at"))}</label>
-              <input id="at" type="datetime-local" value="${toLocalInput(new Date(Math.ceil(Date.now() / 3600000) * 3600000))}">
+            <div id="atBox">
+              <div id="timeHost"></div>
+              <div class="chips" id="timeChips">${timeChips}</div>
+              <div class="dateline">
+                <span class="day" id="dayText"></span>
+                <button class="link" id="dateToggle"></button>
+              </div>
+              <div id="dateHost"></div>
             </div>
           </div>
           <div>
@@ -532,64 +553,121 @@
           <div class="error" id="error"></div>
         </div>
         <div class="buttons">
-          <button class="btn" id="cancelBtn">${esc(t("close"))}</button>
+          ${this._params?.done ? `<button class="btn" id="closeBtn">${esc(t("close"))}</button>` : ""}
           <button class="btn primary" id="go">${esc(t("schedule"))}</button>
         </div>`;
 
-      const $ = (sel) => this._dlg.querySelector(sel);
-      const x = $("#x");
-      x.path = ICON_CLOSE;
-      x.label = t("close");
-      x.addEventListener("click", () => this.close());
-      $("#cancelBtn").addEventListener("click", () => this.close());
-      $("#action").addEventListener("change", () => this._renderValueField());
-      $("#amount").addEventListener("input", () => this._updatePreview());
-      $("#unit").addEventListener("change", () => this._updatePreview());
-      $("#at").addEventListener("input", () => this._updatePreview());
-      $("#repeat").addEventListener("change", () => this._updatePreview());
-      $("#mode").addEventListener("click", (ev) => {
+      this._timeField = this._makeField("time", this._time, (v) => {
+        this._time = v ? v.slice(0, 5) : null;
+        this._updatePreview();
+      });
+      this._$("#timeHost").append(this._timeField);
+
+      this._$("#closeBtn")?.addEventListener("click", () => this._params.done());
+      this._$("#action").addEventListener("change", () => this._renderValueField());
+      this._$("#amount").addEventListener("input", () => this._updatePreview());
+      this._$("#unit").addEventListener("change", () => this._updatePreview());
+      this._$("#repeat").addEventListener("change", () => this._updatePreview());
+      this._$("#mode").addEventListener("click", (ev) => {
         const b = ev.target.closest("[data-mode]");
         if (b) this._setMode(b.dataset.mode);
       });
-      $("#amount").addEventListener("keydown", (ev) => {
-        if (ev.key === "Enter") this._submit();
-      });
-      $(".chips").addEventListener("click", (ev) => {
+      this._$("#inChips").addEventListener("click", (ev) => {
         const chip = ev.target.closest(".chip");
         if (!chip) return;
-        $("#amount").value = chip.dataset.amount;
-        $("#unit").value = chip.dataset.unit;
+        this._$("#amount").value = chip.dataset.amount;
+        this._$("#unit").value = chip.dataset.unit;
         this._updatePreview();
       });
-      $("#pending").addEventListener("click", (ev) => {
+      this._$("#timeChips").addEventListener("click", (ev) => {
+        const chip = ev.target.closest(".chip");
+        if (!chip) return;
+        this._time = chip.dataset.time;
+        this._timeField.value = this._useHa ? `${this._time}:00` : this._time;
+        this._updatePreview();
+      });
+      this._$("#dateToggle").addEventListener("click", () => this._toggleDate());
+      this._$("#pending").addEventListener("click", (ev) => {
         const btn = ev.target.closest("[data-cancel]");
         if (btn) this._cancelTimer(btn.dataset.cancel);
       });
-      $("#go").addEventListener("click", () => this._submit());
+      this._$("#go").addEventListener("click", () => this._submit());
+      this._$("#amount").addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") this._submit();
+      });
 
       this._renderValueField();
       this._renderPending();
-      this._updatePreview();
+      this._renderDate();
+      this._setMode(this._mode);
+    }
 
-      if (!this._dlg.open) this._dlg.showModal();
-      $("#amount").focus();
-      $("#amount").select();
-      this._startTick();
+    // HA picker if available, browser input otherwise. kind: "time" | "date".
+    _makeField(kind, value, onChange) {
+      let el;
+      if (this._useHa) {
+        el = document.createElement("ha-selector");
+        el.hass = this._hass;
+        el.selector = kind === "time" ? { time: { no_second: true } } : { date: {} };
+        el.value = kind === "time" && value ? `${value}:00` : value;
+        el.label = this._t(kind);
+        el.required = true;
+        el.addEventListener("value-changed", (ev) => {
+          ev.stopPropagation();
+          el.value = ev.detail.value;
+          onChange(ev.detail.value);
+        });
+      } else {
+        el = document.createElement("input");
+        el.type = kind;
+        el.value = value || "";
+        el.addEventListener("input", () => onChange(el.value));
+      }
+      return el;
+    }
+
+    _toggleDate() {
+      this._date = this._date ? null : dateStr(this._atDate() || new Date());
+      this._renderDate();
+      this._updatePreview();
+    }
+
+    _renderDate() {
+      const host = this._$("#dateHost");
+      host.replaceChildren();
+      this._$("#dateToggle").textContent = this._t(this._date ? "auto_date" : "pick_date");
+      if (this._date) {
+        host.append(
+          this._makeField("date", this._date, (v) => {
+            this._date = v || null;
+            this._updatePreview();
+          })
+        );
+      }
+    }
+
+    _setMode(mode) {
+      this._mode = mode;
+      this.shadowRoot.querySelectorAll("#mode [data-mode]").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
+      this._$("#inBox").hidden = mode !== "in";
+      this._$("#atBox").hidden = mode !== "at";
+      this._showError("");
+      this._updatePreview();
     }
 
     _currentAction() {
-      const sel = this._dlg.querySelector("#action");
+      const sel = this._$("#action");
       return sel ? this._actions[Number(sel.value)] : undefined;
     }
 
     _renderValueField() {
-      const row = this._dlg.querySelector("#valueRow");
+      const row = this._$("#valueRow");
       const f = this._currentAction()?.field;
       if (!f) {
         row.innerHTML = "";
         return;
       }
-      const label = `<label for="value">${esc(tr(this._hass, "value"))}</label>`;
+      const label = `<label for="value">${esc(this._t("value"))}</label>`;
       if (f.type === "select") {
         row.innerHTML = `${label}<select id="value">${f.options
           .map((o) => `<option value="${esc(o)}" ${o === f.value ? "selected" : ""}>${esc(o)}</option>`)
@@ -606,67 +684,62 @@
     }
 
     _delaySeconds() {
-      const amount = parseFloat(String(this._dlg.querySelector("#amount")?.value).replace(",", "."));
-      const unit = Number(this._dlg.querySelector("#unit")?.value || 60);
+      const amount = parseFloat(String(this._$("#amount")?.value).replace(",", "."));
+      const unit = Number(this._$("#unit")?.value || 60);
       return Number.isFinite(amount) ? Math.round(amount * unit) : NaN;
     }
 
-    _mode() {
-      return this._dlg.querySelector("#mode .on")?.dataset.mode || "in";
-    }
-
-    _setMode(mode) {
-      this._dlg.querySelectorAll("#mode [data-mode]").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
-      this._dlg.querySelector("#inBox").hidden = mode !== "in";
-      this._dlg.querySelector("#atBox").hidden = mode !== "at";
-      this._showError("");
-      this._updatePreview();
-    }
-
+    // The chosen "At" moment; without a chosen date: the next time the clock shows _time.
     _atDate() {
-      const v = this._dlg.querySelector("#at")?.value;
-      const d = v ? new Date(v) : null;
-      return d && !isNaN(d) ? d : null;
+      if (!this._time) return null;
+      const [h, m] = this._time.split(":").map(Number);
+      if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+      if (this._date) {
+        const [y, mo, d] = this._date.split("-").map(Number);
+        return new Date(y, mo - 1, d, h, m, 0, 0);
+      }
+      const d = new Date();
+      d.setHours(h, m, 0, 0);
+      if (d <= Date.now()) d.setDate(d.getDate() + 1);
+      return d;
     }
 
     // Next run as a Date, or null if the input is invalid.
     _nextRun() {
-      if (this._mode() === "in") {
+      if (this._mode === "in") {
         const s = this._delaySeconds();
         return s > 0 ? new Date(Date.now() + s * 1000) : null;
       }
       const at = this._atDate();
       if (!at) return null;
       if (at > Date.now()) return at;
-      if (!this._dlg.querySelector("#repeat")?.checked) return null;
-      const next = new Date(at); // daily repeat from a past time: next occurrence
+      if (!this._$("#repeat")?.checked) return null;
+      const next = new Date(at); // daily repeat from a past date: next occurrence
       while (next <= Date.now()) next.setDate(next.getDate() + 1);
       return next;
     }
 
     _updatePreview() {
-      const el = this._dlg.querySelector("#preview");
+      const el = this._$("#preview");
       if (!el) return;
       const hass = this._hass;
-      const label = this._dlg.querySelector("#repeatLabel");
-      if (this._mode() === "in") {
+      const label = this._$("#repeatLabel");
+      if (this._mode === "in") {
         const s = this._delaySeconds();
-        label.textContent = s > 0 ? tr(hass, "repeat_interval", { time: formatInterval(s) }) : tr(hass, "repeat");
+        label.textContent = s > 0 ? this._t("repeat_interval", { time: formatInterval(s) }) : this._t("repeat");
       } else {
         const at = this._atDate();
-        label.textContent = at ? tr(hass, "repeat_daily", { time: formatClock(hass, at, true) }) : tr(hass, "repeat");
+        label.textContent = at ? this._t("repeat_daily", { time: formatClock(hass, at, true) }) : this._t("repeat");
+        this._$("#dayText").textContent = at ? dayLabel(hass, at) : "";
       }
       const next = this._nextRun();
-      el.textContent = next ? tr(hass, "runs_at", { time: formatClock(hass, next) }) : "";
+      el.textContent = next ? this._t("runs_at", { time: `${dayLabel(hass, next)}, ${formatClock(hass, next, true)}` }) : "";
     }
 
     _describe(timer) {
-      const hass = this._hass;
-      const action = this._actions.find(
-        (a) => a.service === timer.action && (!a.field || a.field.name in (timer.data || {}))
-      );
+      const action = this._actions.find((a) => a.service === timer.action && (!a.field || a.field.name in (timer.data || {})));
       if (!action) return timer.action;
-      let label = tr(hass, action.key);
+      let label = this._t(action.key);
       if (action.field) {
         let v = timer.data[action.field.name];
         if (action.field.scale) v = Math.round(v / action.field.scale);
@@ -676,25 +749,29 @@
     }
 
     _renderPending() {
-      const box = this._dlg.querySelector("#pending");
+      const box = this._$("#pending");
       if (!box) return;
-      const timers = this._timersForEntity();
+      const hass = this._hass;
+      const timers = store.timers.filter((tm) => tm.entity_id === this._entityId);
       if (!timers.length) {
-        box.innerHTML = `<div class="empty">${esc(tr(this._hass, "none"))}</div>`;
+        box.innerHTML = `<div class="empty">${esc(this._t("none"))}</div>`;
         return;
       }
       box.innerHTML = `<ul>${timers
         .map((tm) => {
           const at = new Date(tm.fire_at);
+          const rep = tm.repeat
+            ? `<span class="rep">↻ ${esc(
+                tm.repeat === "daily"
+                  ? this._t("daily", { time: formatClock(hass, at, true) })
+                  : this._t("every", { time: formatInterval(tm.interval) })
+              )}</span>`
+            : "";
           return `<li>
             <div class="info">
               <span>${esc(this._describe(tm))}</span>
-              <span class="when">${esc(formatClock(this._hass, at))} · <span data-rem="${at.getTime()}">${formatRemaining(at - Date.now())}</span></span>
-              ${tm.repeat ? `<span class="rep">↻ ${esc(
-                tm.repeat === "daily"
-                  ? tr(this._hass, "daily", { time: formatClock(this._hass, at, true) })
-                  : tr(this._hass, "every", { time: formatInterval(tm.interval) })
-              )}</span>` : ""}
+              <span class="when">${esc(formatClock(hass, at))} · <span data-rem="${at.getTime()}">${formatRemaining(at - Date.now())}</span></span>
+              ${rep}
             </div>
             <ha-icon-button data-cancel="${esc(tm.id)}"></ha-icon-button>
           </li>`;
@@ -702,14 +779,14 @@
         .join("")}</ul>`;
       box.querySelectorAll("ha-icon-button[data-cancel]").forEach((b) => {
         b.path = ICON_CLOSE;
-        b.label = tr(this._hass, "cancel");
+        b.label = this._t("cancel");
       });
     }
 
     _startTick() {
       this._stopTick();
       this._tick = setInterval(() => {
-        this._dlg.querySelectorAll("[data-rem]").forEach((el) => {
+        this.shadowRoot.querySelectorAll("[data-rem]").forEach((el) => {
           el.textContent = formatRemaining(Number(el.dataset.rem) - Date.now());
         });
         this._updatePreview();
@@ -722,7 +799,7 @@
     }
 
     _showError(msg) {
-      const el = this._dlg.querySelector("#error");
+      const el = this._$("#error");
       if (el) el.textContent = msg || "";
     }
 
@@ -738,38 +815,26 @@
       const hass = this._hass;
       const action = this._currentAction();
       if (!action) return;
-      const repeat = this._dlg.querySelector("#repeat").checked;
+      const repeat = this._$("#repeat").checked;
       const when = {};
-      if (this._mode() === "in") {
+      if (this._mode === "in") {
         const delay = this._delaySeconds();
-        if (!(delay > 0)) {
-          this._showError(tr(hass, "invalid_delay"));
-          return;
-        }
-        if (repeat && delay < 60) {
-          this._showError(tr(hass, "min_interval"));
-          return;
-        }
+        if (!(delay > 0)) return this._showError(this._t("invalid_delay"));
+        if (repeat && delay < 60) return this._showError(this._t("min_interval"));
         when.delay = delay;
       } else {
         const at = this._atDate();
-        if (!at || (!repeat && at <= Date.now())) {
-          this._showError(tr(hass, "invalid_at"));
-          return;
-        }
+        if (!at || (!repeat && at <= Date.now())) return this._showError(this._t("invalid_at"));
         when.at = at.toISOString();
       }
 
       const data = {};
       const f = action.field;
       if (f) {
-        const raw = this._dlg.querySelector("#value")?.value ?? "";
+        const raw = this._$("#value")?.value ?? "";
         if (f.type === "number") {
           let v = parseFloat(String(raw).replace(",", "."));
-          if (!Number.isFinite(v) || v < f.min || v > f.max) {
-            this._showError(tr(hass, "invalid_value"));
-            return;
-          }
+          if (!Number.isFinite(v) || v < f.min || v > f.max) return this._showError(this._t("invalid_value"));
           if (f.scale) v = Math.round(v * f.scale * 1000) / 1000;
           data[f.name] = v;
         } else {
@@ -777,7 +842,7 @@
         }
       }
 
-      const go = this._dlg.querySelector("#go");
+      const go = this._$("#go");
       go.disabled = true;
       this._showError("");
       try {
@@ -788,12 +853,141 @@
           ...when,
           repeat,
         });
-        this.close();
+        if (this._params?.done) this._params.done();
+        else this.dispatchEvent(new CustomEvent("close-child-view", { bubbles: true, composed: true }));
       } catch (err) {
         this._showError(err?.message || String(err));
       } finally {
         go.disabled = false;
       }
+    }
+  }
+
+  customElements.define(PANEL_TAG, TimedEventPanel);
+
+  // ---------------------------------------------------------------------------
+  // The header button
+  // ---------------------------------------------------------------------------
+
+  const BUTTON_CSS = `
+    :host { display: inline-flex; position: relative; }
+    .wrap { position: relative; display: inline-flex; }
+    ha-icon-button.active { color: var(--primary-color); }
+    .badge {
+      position: absolute; top: 4px; right: 2px; min-width: 16px; height: 16px; padding: 0 4px;
+      box-sizing: border-box; border-radius: 8px; font-size: 11px; line-height: 16px; text-align: center;
+      background: var(--primary-color); color: var(--text-primary-color, #fff); pointer-events: none;
+    }
+    .badge[hidden] { display: none; }
+    /* Fallback for HA versions without more-info child views */
+    dialog {
+      border: none; padding: 16px 24px; border-radius: var(--ha-dialog-border-radius, 24px);
+      width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; box-sizing: border-box;
+      background: var(--ha-dialog-surface-background, var(--card-background-color, #1c1c1c));
+      color: var(--primary-text-color); box-shadow: 0 8px 32px rgba(0,0,0,.5);
+      font-family: var(--ha-font-family-body, Roboto, sans-serif);
+    }
+    dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+    .title { font-size: 20px; font-weight: 500; }
+  `;
+
+  class TimedEventButton extends HTMLElement {
+    constructor() {
+      super();
+      this._hass = null;
+      this._entityId = null;
+      this.host = null; // the ha-more-info-dialog we live in
+      this._onStore = () => this._updateBadge();
+
+      const root = this.attachShadow({ mode: "open" });
+      root.innerHTML = `<style>${BUTTON_CSS}</style>
+        <div class="wrap"><ha-icon-button id="btn"></ha-icon-button><span class="badge" hidden></span></div>
+        <dialog id="dlg"><div class="title"></div></dialog>`;
+      this._btn = root.getElementById("btn");
+      this._badge = root.querySelector(".badge");
+      this._dlg = root.getElementById("dlg");
+      this._btn.path = ICON;
+      this._btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this.open();
+      });
+      // Fallback dialog: keep keys/clicks from reaching the more-info dialog.
+      for (const type of ["keydown", "keyup", "keypress", "click"]) {
+        this._dlg.addEventListener(type, (ev) => ev.stopPropagation());
+      }
+      this._dlg.addEventListener("click", (ev) => {
+        if (ev.target === this._dlg) this._closeFallback();
+      });
+    }
+
+    set hass(hass) {
+      this._hass = hass;
+      ensureSubscribed(hass);
+      this._btn.label = tr(hass, "title");
+      const panel = this._dlg.querySelector(PANEL_TAG);
+      if (panel) panel.hass = hass;
+      this._updateBadge();
+    }
+
+    get hass() {
+      return this._hass;
+    }
+
+    set entityId(id) {
+      if (id === this._entityId) return;
+      this._entityId = id;
+      this._closeFallback();
+      this._updateBadge();
+    }
+
+    get entityId() {
+      return this._entityId;
+    }
+
+    connectedCallback() {
+      store.listeners.add(this._onStore);
+      this._updateBadge();
+    }
+
+    disconnectedCallback() {
+      store.listeners.delete(this._onStore);
+      this._closeFallback();
+    }
+
+    _updateBadge() {
+      const n = this._entityId ? store.timers.filter((t) => t.entity_id === this._entityId).length : 0;
+      this._badge.hidden = n === 0;
+      this._badge.textContent = String(n);
+      this._btn.classList.toggle("active", n > 0);
+    }
+
+    open() {
+      if (!this._hass || !this._entityId) return;
+      const title = tr(this._hass, "title");
+      if (this.host && "_childView" in this.host) {
+        // Native more-info sub page with back arrow (like Settings).
+        this.dispatchEvent(
+          new CustomEvent("show-child-view", {
+            bubbles: true,
+            composed: true,
+            detail: { viewTag: PANEL_TAG, viewTitle: title, viewParams: { entityId: this._entityId } },
+          })
+        );
+        return;
+      }
+      const name = this._hass.states[this._entityId]?.attributes?.friendly_name || this._entityId;
+      this._dlg.querySelector(".title").textContent = `${title} – ${name}`;
+      this._dlg.querySelector(PANEL_TAG)?.remove();
+      const panel = document.createElement(PANEL_TAG);
+      panel.params = { entityId: this._entityId, done: () => this._closeFallback() };
+      panel.hass = this._hass;
+      this._dlg.append(panel);
+      this._dlg.showModal();
+    }
+
+    _closeFallback() {
+      if (this._dlg.open) this._dlg.close();
+      this._dlg.querySelector(PANEL_TAG)?.remove();
     }
   }
 
@@ -803,14 +997,14 @@
   // Inject the button into ha-more-info-dialog's header
   // ---------------------------------------------------------------------------
 
-  // Header action icons (history, settings, ⋮) carry slot="actionItems".
-  function findAnchor(root, depth = 0) {
+  // Older frontends put header icons in slot="actionItems" of an inner ha-dialog-header.
+  function findLegacyAnchor(root, depth = 0) {
     if (!root || depth > 3) return null;
-    const hit = root.querySelector('[slot="actionItems"]:not(timed-event-button)');
+    const hit = root.querySelector(`[slot="actionItems"]:not(${TAG})`);
     if (hit) return hit;
     for (const el of root.querySelectorAll("*")) {
       if (el.shadowRoot && !el.matches("ha-icon-button, ha-button-menu, ha-md-button-menu")) {
-        const found = findAnchor(el.shadowRoot, depth + 1);
+        const found = findLegacyAnchor(el.shadowRoot, depth + 1);
         if (found) return found;
       }
     }
@@ -821,8 +1015,8 @@
     const root = dialog.shadowRoot;
     if (!root) return;
     const entityId = dialog._entityId;
-    const view = dialog._currentView;
     const hass = dialog.hass;
+    const view = dialog._currView ?? dialog._currentView;
     let btn = dialog.__timedEventButton;
 
     const show =
@@ -833,13 +1027,17 @@
     }
 
     if (!btn || !btn.isConnected) {
-      const anchor = findAnchor(root);
+      // Current frontend: icons are light-DOM children with slot="headerActionItems".
+      let anchor = root.querySelector(`[slot="headerActionItems"]:not(${TAG})`);
+      const slot = anchor ? "headerActionItems" : "actionItems";
+      anchor ??= findLegacyAnchor(root);
       if (!anchor) return;
       btn = btn || document.createElement(TAG);
-      btn.slot = "actionItems";
+      btn.slot = slot;
       anchor.parentNode.insertBefore(btn, anchor);
       dialog.__timedEventButton = btn;
     }
+    btn.host = dialog;
     btn.style.display = "";
     btn.hass = hass;
     btn.entityId = entityId;

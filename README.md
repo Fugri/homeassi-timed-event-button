@@ -4,6 +4,8 @@ Adds a ⏱ button to the header of **every entity's more-info dialog** (next to 
 It lets you run an action on that entity **in X minutes or hours** or **at a date and time**, e.g.
 "turn the heat pump off in 2 h", "set input_number to 21 at 07:00", "select option *Eco* in 8 h".
 
+* **At:** just set the time (HA's own time picker, or one tap on 06:00 / 07:00 / … chips) – it runs
+  today, or tomorrow if that time has already passed. *Choose date* opens HA's date picker for other days.
 * **Repeat:** with *In*, the action repeats every X minutes/hours; with *At*, it repeats every day at
   that time (stays at the same local time across DST changes). Repeats skip runs missed while HA was down.
 
@@ -70,6 +72,9 @@ Events: `timed_event_executed`, `timed_event_failed` (with `entity_id`, `action`
 ## How the button gets into the dialog
 
 `frontend/timed-event-button.js` is loaded on every page (`add_extra_js_url`). It hooks the
-`updated()` lifecycle of `ha-more-info-dialog` and inserts a `<timed-event-button slot="actionItems">`
-before the first header action icon. If a future HA frontend restructures that dialog, this is the
-place to adjust (`inject()` / `findAnchor()` at the bottom of the file).
+`updated()` lifecycle of `ha-more-info-dialog` and inserts a `<timed-event-button slot="headerActionItems">`
+before the first header action icon. Clicking it opens `<timed-event-panel>` as a more-info *child view*
+(the same mechanism the Settings sub-pages use, with a back arrow). Older frontends without child views
+get the panel in a separate dialog instead. HA's time/date pickers (`ha-selector`) are lazy-loaded via the
+tile card editor; if that fails, browser inputs are used. If a future HA frontend restructures the dialog,
+`inject()` at the bottom of the file is the place to adjust.

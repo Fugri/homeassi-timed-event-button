@@ -1,7 +1,7 @@
 """Constants for the Timed Event integration."""
 
 DOMAIN = "timed_event"
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 STORAGE_KEY = f"{DOMAIN}.timers"
 STORAGE_VERSION = 1
