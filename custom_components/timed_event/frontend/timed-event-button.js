@@ -20,6 +20,16 @@
       action: "Action",
       value: "Value",
       run_in: "Run in",
+      mode_in: "In",
+      mode_at: "At",
+      run_at: "Date & time",
+      repeat: "Repeat",
+      repeat_interval: "Repeat every {time}",
+      repeat_daily: "Repeat every day at {time}",
+      every: "every {time}",
+      daily: "daily {time}",
+      invalid_at: "Pick a time in the future",
+      min_interval: "Repeat interval must be at least 1 minute",
       minutes: "minutes",
       hours: "hours",
       schedule: "Schedule",
@@ -65,6 +75,16 @@
       action: "Aktion",
       value: "Wert",
       run_in: "Ausführen in",
+      mode_in: "In",
+      mode_at: "Um",
+      run_at: "Datum & Uhrzeit",
+      repeat: "Wiederholen",
+      repeat_interval: "Alle {time} wiederholen",
+      repeat_daily: "Täglich um {time} wiederholen",
+      every: "alle {time}",
+      daily: "täglich {time}",
+      invalid_at: "Bitte einen Zeitpunkt in der Zukunft wählen",
+      min_interval: "Das Intervall muss mindestens 1 Minute sein",
       minutes: "Minuten",
       hours: "Stunden",
       schedule: "Planen",
@@ -246,15 +266,32 @@
   // Formatting helpers
   // ---------------------------------------------------------------------------
 
-  function formatClock(hass, date) {
+  function formatClock(hass, date, timeOnly = false) {
     const tf = hass.locale?.time_format;
     const opts = { hour: "2-digit", minute: "2-digit", hour12: tf === "12" ? true : tf === "24" ? false : undefined };
-    if (date.toDateString() !== new Date().toDateString()) opts.weekday = "short";
+    if (!timeOnly && date.toDateString() !== new Date().toDateString()) {
+      if (date - Date.now() < 6 * 86400000) opts.weekday = "short";
+      else Object.assign(opts, { day: "numeric", month: "short" });
+    }
     try {
       return date.toLocaleTimeString(hass.locale?.language || hass.language, opts);
     } catch {
       return date.toLocaleTimeString(undefined, opts);
     }
+  }
+
+  // "30 min", "1.5 h", "1 h 20 min"
+  function formatInterval(sec) {
+    const h = Math.floor(sec / 3600);
+    const m = Math.round((sec % 3600) / 60);
+    if (!h) return `${m} min`;
+    return m ? `${h} h ${m} min` : `${h} h`;
+  }
+
+  // Value for <input type="datetime-local"> in browser time.
+  function toLocalInput(date) {
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
 
   function formatRemaining(ms) {
@@ -309,6 +346,17 @@
     .row select { flex: 0 0 auto; width: auto; }
     .with-unit { display: flex; align-items: center; gap: 8px; }
     .with-unit span { color: var(--secondary-text-color); }
+    .seg { display: inline-flex; border: 1px solid var(--divider-color, rgba(127,127,127,.4)); border-radius: 18px; overflow: hidden; margin-bottom: 8px; }
+    .seg button {
+      font: inherit; font-size: 14px; padding: 6px 18px; border: none; cursor: pointer;
+      background: transparent; color: var(--primary-text-color);
+    }
+    .seg button.on { background: var(--primary-color); color: var(--text-primary-color, #fff); }
+    [hidden] { display: none !important; }
+    input[type="datetime-local"] { color-scheme: light dark; }
+    .check { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; color: var(--primary-text-color); margin: 0; }
+    .check input { width: 20px; height: 20px; margin: 0; padding: 0; accent-color: var(--primary-color); flex: 0 0 auto; }
+    .rep { font-size: 12px; color: var(--primary-color); }
     .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     .chip {
       font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 16px; cursor: pointer;
@@ -457,15 +505,28 @@
           </div>
           <div id="valueRow"></div>
           <div>
-            <label for="amount">${esc(t("run_in"))}</label>
-            <div class="row">
-              <input id="amount" type="number" inputmode="decimal" min="0" step="any" value="30">
-              <select id="unit">
-                <option value="60" selected>${esc(t("minutes"))}</option>
-                <option value="3600">${esc(t("hours"))}</option>
-              </select>
+            <div class="seg" id="mode">
+              <button data-mode="in" class="on">${esc(t("mode_in"))}</button>
+              <button data-mode="at">${esc(t("mode_at"))}</button>
             </div>
-            <div class="chips">${chips}</div>
+            <div id="inBox">
+              <label for="amount">${esc(t("run_in"))}</label>
+              <div class="row">
+                <input id="amount" type="number" inputmode="decimal" min="0" step="any" value="30">
+                <select id="unit">
+                  <option value="60" selected>${esc(t("minutes"))}</option>
+                  <option value="3600">${esc(t("hours"))}</option>
+                </select>
+              </div>
+              <div class="chips">${chips}</div>
+            </div>
+            <div id="atBox" hidden>
+              <label for="at">${esc(t("run_at"))}</label>
+              <input id="at" type="datetime-local" value="${toLocalInput(new Date(Math.ceil(Date.now() / 3600000) * 3600000))}">
+            </div>
+          </div>
+          <div>
+            <label class="check"><input type="checkbox" id="repeat"><span id="repeatLabel"></span></label>
             <div class="hint" id="preview"></div>
           </div>
           <div class="error" id="error"></div>
@@ -484,6 +545,12 @@
       $("#action").addEventListener("change", () => this._renderValueField());
       $("#amount").addEventListener("input", () => this._updatePreview());
       $("#unit").addEventListener("change", () => this._updatePreview());
+      $("#at").addEventListener("input", () => this._updatePreview());
+      $("#repeat").addEventListener("change", () => this._updatePreview());
+      $("#mode").addEventListener("click", (ev) => {
+        const b = ev.target.closest("[data-mode]");
+        if (b) this._setMode(b.dataset.mode);
+      });
       $("#amount").addEventListener("keydown", (ev) => {
         if (ev.key === "Enter") this._submit();
       });
@@ -544,11 +611,53 @@
       return Number.isFinite(amount) ? Math.round(amount * unit) : NaN;
     }
 
+    _mode() {
+      return this._dlg.querySelector("#mode .on")?.dataset.mode || "in";
+    }
+
+    _setMode(mode) {
+      this._dlg.querySelectorAll("#mode [data-mode]").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
+      this._dlg.querySelector("#inBox").hidden = mode !== "in";
+      this._dlg.querySelector("#atBox").hidden = mode !== "at";
+      this._showError("");
+      this._updatePreview();
+    }
+
+    _atDate() {
+      const v = this._dlg.querySelector("#at")?.value;
+      const d = v ? new Date(v) : null;
+      return d && !isNaN(d) ? d : null;
+    }
+
+    // Next run as a Date, or null if the input is invalid.
+    _nextRun() {
+      if (this._mode() === "in") {
+        const s = this._delaySeconds();
+        return s > 0 ? new Date(Date.now() + s * 1000) : null;
+      }
+      const at = this._atDate();
+      if (!at) return null;
+      if (at > Date.now()) return at;
+      if (!this._dlg.querySelector("#repeat")?.checked) return null;
+      const next = new Date(at); // daily repeat from a past time: next occurrence
+      while (next <= Date.now()) next.setDate(next.getDate() + 1);
+      return next;
+    }
+
     _updatePreview() {
       const el = this._dlg.querySelector("#preview");
       if (!el) return;
-      const s = this._delaySeconds();
-      el.textContent = s > 0 ? tr(this._hass, "runs_at", { time: formatClock(this._hass, new Date(Date.now() + s * 1000)) }) : "";
+      const hass = this._hass;
+      const label = this._dlg.querySelector("#repeatLabel");
+      if (this._mode() === "in") {
+        const s = this._delaySeconds();
+        label.textContent = s > 0 ? tr(hass, "repeat_interval", { time: formatInterval(s) }) : tr(hass, "repeat");
+      } else {
+        const at = this._atDate();
+        label.textContent = at ? tr(hass, "repeat_daily", { time: formatClock(hass, at, true) }) : tr(hass, "repeat");
+      }
+      const next = this._nextRun();
+      el.textContent = next ? tr(hass, "runs_at", { time: formatClock(hass, next) }) : "";
     }
 
     _describe(timer) {
@@ -581,6 +690,11 @@
             <div class="info">
               <span>${esc(this._describe(tm))}</span>
               <span class="when">${esc(formatClock(this._hass, at))} · <span data-rem="${at.getTime()}">${formatRemaining(at - Date.now())}</span></span>
+              ${tm.repeat ? `<span class="rep">↻ ${esc(
+                tm.repeat === "daily"
+                  ? tr(this._hass, "daily", { time: formatClock(this._hass, at, true) })
+                  : tr(this._hass, "every", { time: formatInterval(tm.interval) })
+              )}</span>` : ""}
             </div>
             <ha-icon-button data-cancel="${esc(tm.id)}"></ha-icon-button>
           </li>`;
@@ -624,10 +738,26 @@
       const hass = this._hass;
       const action = this._currentAction();
       if (!action) return;
-      const delay = this._delaySeconds();
-      if (!(delay > 0)) {
-        this._showError(tr(hass, "invalid_delay"));
-        return;
+      const repeat = this._dlg.querySelector("#repeat").checked;
+      const when = {};
+      if (this._mode() === "in") {
+        const delay = this._delaySeconds();
+        if (!(delay > 0)) {
+          this._showError(tr(hass, "invalid_delay"));
+          return;
+        }
+        if (repeat && delay < 60) {
+          this._showError(tr(hass, "min_interval"));
+          return;
+        }
+        when.delay = delay;
+      } else {
+        const at = this._atDate();
+        if (!at || (!repeat && at <= Date.now())) {
+          this._showError(tr(hass, "invalid_at"));
+          return;
+        }
+        when.at = at.toISOString();
       }
 
       const data = {};
@@ -655,7 +785,8 @@
           entity_id: this._entityId,
           action: action.service,
           data,
-          delay,
+          ...when,
+          repeat,
         });
         this.close();
       } catch (err) {

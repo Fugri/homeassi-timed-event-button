@@ -1,8 +1,11 @@
 # Timed Event – timer button for Home Assistant
 
 Adds a ⏱ button to the header of **every entity's more-info dialog** (next to history / settings).
-It lets you run an action on that entity **in X minutes or hours**, e.g. "turn the heat pump off in 2 h",
-"set input_number to 21 in 30 min", "select option *Eco* in 8 h".
+It lets you run an action on that entity **in X minutes or hours** or **at a date and time**, e.g.
+"turn the heat pump off in 2 h", "set input_number to 21 at 07:00", "select option *Eco* in 8 h".
+
+* **Repeat:** with *In*, the action repeats every X minutes/hours; with *At*, it repeats every day at
+  that time (stays at the same local time across DST changes). Repeats skip runs missed while HA was down.
 
 * Timers run in the **backend**, so they still fire when the browser is closed and survive HA restarts
   (overdue timers fire right after startup).
@@ -50,6 +53,8 @@ data:
   entity_id: switch.aquarea_main_power
   action: switch.turn_off
   delay: "02:00:00"          # or {hours: 2} or seconds
+  # at: "2026-10-27 07:00:00" # instead of delay: run at this time
+  # repeat: true              # delay → every 2 h; at → daily at 07:00
   data: {}                   # optional extra data, e.g. {brightness_pct: 40}
 response_variable: result    # optional, contains result.timer.id
 ```

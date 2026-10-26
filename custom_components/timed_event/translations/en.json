@@ -13,20 +13,46 @@
   "services": {
     "schedule": {
       "name": "Schedule timed action",
-      "description": "Run an action on an entity after a delay.",
+      "description": "Run an action on an entity after a delay or at a time, optionally repeating.",
       "fields": {
-        "entity_id": { "name": "Entity", "description": "Entity the action targets." },
-        "action": { "name": "Action", "description": "Action to run, e.g. switch.turn_off." },
-        "data": { "name": "Data", "description": "Extra action data, e.g. {\"brightness_pct\": 50}." },
-        "delay": { "name": "Delay", "description": "How long to wait before running the action." }
+        "entity_id": {
+          "name": "Entity",
+          "description": "Entity the action targets."
+        },
+        "action": {
+          "name": "Action",
+          "description": "Action to run, e.g. switch.turn_off."
+        },
+        "data": {
+          "name": "Data",
+          "description": "Extra action data, e.g. {\"brightness_pct\": 50}."
+        },
+        "delay": {
+          "name": "Delay",
+          "description": "Run after this delay (use either delay or at). With repeat: interval."
+        },
+        "at": {
+          "name": "At",
+          "description": "Run at this date and time (use either delay or at). With repeat: every day at this time."
+        },
+        "repeat": {
+          "name": "Repeat",
+          "description": "Repeat every delay interval, or daily when at is used."
+        }
       }
     },
     "cancel": {
       "name": "Cancel timed action",
       "description": "Cancel a pending timed action by ID, or all pending actions of an entity.",
       "fields": {
-        "timer_id": { "name": "Timer ID", "description": "ID of the timer to cancel." },
-        "entity_id": { "name": "Entity", "description": "Cancel all timers of this entity." }
+        "timer_id": {
+          "name": "Timer ID",
+          "description": "ID of the timer to cancel."
+        },
+        "entity_id": {
+          "name": "Entity",
+          "description": "Cancel all timers of this entity."
+        }
       }
     }
   }

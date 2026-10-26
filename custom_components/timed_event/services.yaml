@@ -15,10 +15,20 @@ schedule:
       selector:
         object:
     delay:
-      required: true
+      required: false
       example: "00:30:00"
       selector:
         duration:
+    at:
+      required: false
+      example: "2026-10-27 07:00:00"
+      selector:
+        datetime:
+    repeat:
+      required: false
+      default: false
+      selector:
+        boolean:
 
 cancel:
   fields:

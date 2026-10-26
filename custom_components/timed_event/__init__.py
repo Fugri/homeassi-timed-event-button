@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -22,11 +23,14 @@ from homeassistant.core import (
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.util import dt as dt_util
 
 from .const import (
     ATTR_ACTION,
+    ATTR_AT,
     ATTR_DATA,
     ATTR_DELAY,
+    ATTR_REPEAT,
     ATTR_TIMER_ID,
     DOMAIN,
     FRONTEND_SCRIPT,
@@ -34,20 +38,27 @@ from .const import (
     SERVICE_CANCEL,
     SERVICE_SCHEDULE,
 )
-from .manager import TimedEventManager
+from .manager import TimedEventManager, next_fire_at
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 FRONTEND_DIR = Path(__file__).parent / "frontend"
 
-SCHEDULE_SCHEMA = vol.Schema(
-    {
-        vol.Required(ATTR_ENTITY_ID): cv.entity_id,
-        vol.Required(ATTR_ACTION): cv.service,
-        vol.Optional(ATTR_DATA, default=dict): dict,
-        vol.Required(ATTR_DELAY): cv.positive_time_period,
-    }
+SCHEDULE_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Required(ATTR_ENTITY_ID): cv.entity_id,
+            vol.Required(ATTR_ACTION): cv.service,
+            vol.Optional(ATTR_DATA, default=dict): dict,
+            vol.Exclusive(ATTR_DELAY, "when"): cv.positive_time_period,
+            vol.Exclusive(ATTR_AT, "when"): cv.datetime,
+            vol.Optional(ATTR_REPEAT, default=False): cv.boolean,
+        }
+    ),
+    cv.has_at_least_one_key(ATTR_DELAY, ATTR_AT),
 )
+
+MIN_REPEAT_INTERVAL = timedelta(minutes=1)
 
 CANCEL_SCHEMA = vol.All(
     vol.Schema(
@@ -84,8 +95,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if hass.states.get(entity_id) is None:
             raise ServiceValidationError(f"Entity {entity_id} does not exist")
         data = {k: v for k, v in call.data[ATTR_DATA].items() if k != ATTR_ENTITY_ID}
+        repeat: bool = call.data[ATTR_REPEAT]
+        now = dt_util.utcnow()
+
+        if (delay := call.data.get(ATTR_DELAY)) is not None:
+            if repeat and delay < MIN_REPEAT_INTERVAL:
+                raise ServiceValidationError("Repeat interval must be at least 1 minute")
+            fire_at = now + delay
+            mode = "interval" if repeat else None
+            interval = int(delay.total_seconds()) if repeat else None
+        else:
+            at: datetime = call.data[ATTR_AT]
+            if at.tzinfo is None:
+                at = at.replace(tzinfo=dt_util.get_default_time_zone())
+            mode = "daily" if repeat else None
+            interval = None
+            if at <= now:
+                if not repeat:
+                    raise ServiceValidationError("The chosen time is in the past")
+                # Daily repeat starting at a past time: begin with the next occurrence.
+                at = next_fire_at({"fire_at": at.isoformat(), "repeat": "daily"}, now)
+            fire_at = at
+
         timer = manager.async_schedule(
-            entity_id, action, data, call.data[ATTR_DELAY], call.context.user_id
+            entity_id, action, data, fire_at, mode, interval, call.context.user_id
         )
         return {"timer": timer} if call.return_response else None
 

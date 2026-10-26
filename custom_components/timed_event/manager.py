@@ -77,18 +77,25 @@ class TimedEventManager:
         entity_id: str,
         action: str,
         data: dict[str, Any],
-        delay: timedelta,
+        fire_at: datetime,
+        repeat: str | None,
+        interval: int | None,
         user_id: str | None,
     ) -> dict[str, Any]:
-        """Create a new timer and return it."""
-        now = dt_util.utcnow()
+        """Create a new timer and return it.
+
+        repeat is None (one-shot), "interval" (every `interval` seconds) or
+        "daily" (same local wall-clock time every day).
+        """
         timer = {
             "id": uuid.uuid4().hex,
             "entity_id": entity_id,
             "action": action,
             "data": data,
-            "created_at": now.isoformat(),
-            "fire_at": (now + delay).isoformat(),
+            "created_at": dt_util.utcnow().isoformat(),
+            "fire_at": dt_util.as_utc(fire_at).isoformat(),
+            "repeat": repeat,
+            "interval": interval,
             "user_id": user_id,
         }
         self._timers[timer["id"]] = timer
@@ -129,9 +136,14 @@ class TimedEventManager:
         self._unsubs[timer_id] = async_track_point_in_utc_time(self.hass, _fire, fire_at)
 
     async def _async_fire(self, timer_id: str) -> None:
-        timer = self._timers.pop(timer_id, None)
+        timer = self._timers.get(timer_id)
         if timer is None:
             return
+        if timer.get("repeat"):
+            timer["fire_at"] = next_fire_at(timer, dt_util.utcnow()).isoformat()
+            self._arm(timer)
+        else:
+            del self._timers[timer_id]
         self._changed()
 
         domain, service = timer["action"].split(".", 1)
@@ -176,3 +188,19 @@ class TimedEventManager:
 
     def _data_to_save(self) -> dict[str, Any]:
         return {"timers": list(self._timers.values())}
+
+
+def next_fire_at(timer: dict[str, Any], now: datetime) -> datetime:
+    """Next run of a repeating timer after `now` (missed runs are skipped)."""
+    fire_at = dt_util.parse_datetime(timer["fire_at"])
+    if timer["repeat"] == "daily":
+        # Step in local time so the wall-clock time stays fixed across DST changes.
+        local = dt_util.as_local(fire_at)
+        while dt_util.as_utc(local) <= now:
+            local = (local.replace(tzinfo=None) + timedelta(days=1)).replace(
+                tzinfo=local.tzinfo
+            )
+        return dt_util.as_utc(local)
+    step = timedelta(seconds=timer["interval"])
+    missed = max(0, (now - fire_at) // step) + 1
+    return fire_at + step * missed

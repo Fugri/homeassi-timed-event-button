@@ -13,20 +13,46 @@
   "services": {
     "schedule": {
       "name": "Zeitgesteuerte Aktion planen",
-      "description": "Führt nach einer Verzögerung eine Aktion für eine Entität aus.",
+      "description": "Führt eine Aktion nach einer Verzögerung oder zu einem Zeitpunkt aus, optional wiederholt.",
       "fields": {
-        "entity_id": { "name": "Entität", "description": "Ziel-Entität der Aktion." },
-        "action": { "name": "Aktion", "description": "Auszuführende Aktion, z. B. switch.turn_off." },
-        "data": { "name": "Daten", "description": "Zusätzliche Daten, z. B. {\"brightness_pct\": 50}." },
-        "delay": { "name": "Verzögerung", "description": "Wartezeit bis zur Ausführung." }
+        "entity_id": {
+          "name": "Entität",
+          "description": "Ziel-Entität der Aktion."
+        },
+        "action": {
+          "name": "Aktion",
+          "description": "Auszuführende Aktion, z. B. switch.turn_off."
+        },
+        "data": {
+          "name": "Daten",
+          "description": "Zusätzliche Daten, z. B. {\"brightness_pct\": 50}."
+        },
+        "delay": {
+          "name": "Verzögerung",
+          "description": "Nach dieser Wartezeit ausführen (entweder Verzögerung oder Zeitpunkt). Mit Wiederholen: Intervall."
+        },
+        "at": {
+          "name": "Zeitpunkt",
+          "description": "Zu diesem Datum und dieser Uhrzeit ausführen. Mit Wiederholen: täglich zu dieser Uhrzeit."
+        },
+        "repeat": {
+          "name": "Wiederholen",
+          "description": "Im Intervall der Verzögerung wiederholen, oder täglich bei Zeitpunkt."
+        }
       }
     },
     "cancel": {
       "name": "Zeitgesteuerte Aktion abbrechen",
       "description": "Bricht einen Timer per ID oder alle Timer einer Entität ab.",
       "fields": {
-        "timer_id": { "name": "Timer-ID", "description": "ID des abzubrechenden Timers." },
-        "entity_id": { "name": "Entität", "description": "Alle Timer dieser Entität abbrechen." }
+        "timer_id": {
+          "name": "Timer-ID",
+          "description": "ID des abzubrechenden Timers."
+        },
+        "entity_id": {
+          "name": "Entität",
+          "description": "Alle Timer dieser Entität abbrechen."
+        }
       }
     }
   }
