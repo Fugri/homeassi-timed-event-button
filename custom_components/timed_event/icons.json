@@ -1,0 +1,6 @@
+{
+  "services": {
+    "schedule": { "service": "mdi:timer-plus-outline" },
+    "cancel": { "service": "mdi:timer-off-outline" }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "domain": "timed_event",
+  "name": "Timed Event",
+  "codeowners": [
+    "@Fugri"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "frontend",
+    "http",
+    "websocket_api"
+  ],
+  "documentation": "https://github.com/Fugri/homeassi-timed-event-button",
+  "integration_type": "service",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/Fugri/homeassi-timed-event-button/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "1.0.0"
+}

@@ -1,0 +1,33 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Timed Event",
+        "description": "Adds a timer button to every entity's more-info dialog. Reload the browser after setup."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Timed Event is already set up."
+    }
+  },
+  "services": {
+    "schedule": {
+      "name": "Schedule timed action",
+      "description": "Run an action on an entity after a delay.",
+      "fields": {
+        "entity_id": { "name": "Entity", "description": "Entity the action targets." },
+        "action": { "name": "Action", "description": "Action to run, e.g. switch.turn_off." },
+        "data": { "name": "Data", "description": "Extra action data, e.g. {\"brightness_pct\": 50}." },
+        "delay": { "name": "Delay", "description": "How long to wait before running the action." }
+      }
+    },
+    "cancel": {
+      "name": "Cancel timed action",
+      "description": "Cancel a pending timed action by ID, or all pending actions of an entity.",
+      "fields": {
+        "timer_id": { "name": "Timer ID", "description": "ID of the timer to cancel." },
+        "entity_id": { "name": "Entity", "description": "Cancel all timers of this entity." }
+      }
+    }
+  }
+}

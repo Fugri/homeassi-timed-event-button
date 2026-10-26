@@ -1,0 +1,32 @@
+schedule:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+    action:
+      required: true
+      example: switch.turn_off
+      selector:
+        text:
+    data:
+      required: false
+      example: '{"brightness_pct": 50}'
+      selector:
+        object:
+    delay:
+      required: true
+      example: "00:30:00"
+      selector:
+        duration:
+
+cancel:
+  fields:
+    timer_id:
+      required: false
+      selector:
+        text:
+    entity_id:
+      required: false
+      selector:
+        entity:

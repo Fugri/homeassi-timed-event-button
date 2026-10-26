@@ -1,0 +1,33 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Timed Event",
+        "description": "Fügt jedem Entitäts-Dialog einen Timer-Button hinzu. Nach der Einrichtung den Browser neu laden."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Timed Event ist bereits eingerichtet."
+    }
+  },
+  "services": {
+    "schedule": {
+      "name": "Zeitgesteuerte Aktion planen",
+      "description": "Führt nach einer Verzögerung eine Aktion für eine Entität aus.",
+      "fields": {
+        "entity_id": { "name": "Entität", "description": "Ziel-Entität der Aktion." },
+        "action": { "name": "Aktion", "description": "Auszuführende Aktion, z. B. switch.turn_off." },
+        "data": { "name": "Daten", "description": "Zusätzliche Daten, z. B. {\"brightness_pct\": 50}." },
+        "delay": { "name": "Verzögerung", "description": "Wartezeit bis zur Ausführung." }
+      }
+    },
+    "cancel": {
+      "name": "Zeitgesteuerte Aktion abbrechen",
+      "description": "Bricht einen Timer per ID oder alle Timer einer Entität ab.",
+      "fields": {
+        "timer_id": { "name": "Timer-ID", "description": "ID des abzubrechenden Timers." },
+        "entity_id": { "name": "Entität", "description": "Alle Timer dieser Entität abbrechen." }
+      }
+    }
+  }
+}
