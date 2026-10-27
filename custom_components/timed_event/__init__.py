@@ -32,13 +32,14 @@ from .const import (
     ATTR_DELAY,
     ATTR_REPEAT,
     ATTR_TIMER_ID,
+    ATTR_WEEKDAYS,
     DOMAIN,
     FRONTEND_SCRIPT,
     FRONTEND_URL_BASE,
     SERVICE_CANCEL,
     SERVICE_SCHEDULE,
 )
-from .manager import TimedEventManager, next_fire_at
+from .manager import WEEKDAYS, TimedEventManager, next_fire_at
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -53,6 +54,9 @@ SCHEDULE_SCHEMA = vol.All(
             vol.Exclusive(ATTR_DELAY, "when"): cv.positive_time_period,
             vol.Exclusive(ATTR_AT, "when"): cv.datetime,
             vol.Optional(ATTR_REPEAT, default=False): cv.boolean,
+            vol.Optional(ATTR_WEEKDAYS): vol.All(
+                cv.ensure_list, vol.Length(min=1), [vol.In(WEEKDAYS)]
+            ),
         }
     ),
     cv.has_at_least_one_key(ATTR_DELAY, ATTR_AT),
@@ -96,7 +100,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             raise ServiceValidationError(f"Entity {entity_id} does not exist")
         data = {k: v for k, v in call.data[ATTR_DATA].items() if k != ATTR_ENTITY_ID}
         repeat: bool = call.data[ATTR_REPEAT]
+        weekdays: list[str] | None = call.data.get(ATTR_WEEKDAYS)
         now = dt_util.utcnow()
+        if weekdays is not None and not (repeat and ATTR_AT in call.data):
+            raise ServiceValidationError("Weekdays only apply to 'at' with repeat")
+        if weekdays is not None:
+            # Keep calendar order and drop duplicates; all 7 days is plain daily.
+            weekdays = [d for d in WEEKDAYS if d in weekdays]
+            if len(weekdays) == len(WEEKDAYS):
+                weekdays = None
 
         if (delay := call.data.get(ATTR_DELAY)) is not None:
             if repeat and delay < MIN_REPEAT_INTERVAL:
@@ -110,15 +122,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 at = at.replace(tzinfo=dt_util.get_default_time_zone())
             mode = "daily" if repeat else None
             interval = None
-            if at <= now:
-                if not repeat:
-                    raise ServiceValidationError("The chosen time is in the past")
-                # Daily repeat starting at a past time: begin with the next occurrence.
-                at = next_fire_at({"fire_at": at.isoformat(), "repeat": "daily"}, now)
+            if at <= now and not repeat:
+                raise ServiceValidationError("The chosen time is in the past")
+            if repeat:
+                # First occurrence that is in the future and on an allowed weekday.
+                at = next_fire_at(
+                    {"fire_at": at.isoformat(), "repeat": "daily", "weekdays": weekdays},
+                    now,
+                )
             fire_at = at
 
         timer = manager.async_schedule(
-            entity_id, action, data, fire_at, mode, interval, call.context.user_id
+            entity_id,
+            action,
+            data,
+            fire_at,
+            mode,
+            interval,
+            call.context.user_id,
+            weekdays,
         )
         return {"timer": timer} if call.return_response else None
 

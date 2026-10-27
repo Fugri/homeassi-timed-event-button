@@ -38,6 +38,10 @@
         "repeat": {
           "name": "Wiederholen",
           "description": "Im Intervall der Verzögerung wiederholen, oder täglich bei Zeitpunkt."
+        },
+        "weekdays": {
+          "name": "Wochentage",
+          "description": "Nur mit Zeitpunkt und Wiederholen: nur an diesen Tagen ausführen."
         }
       }
     },

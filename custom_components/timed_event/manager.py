@@ -81,11 +81,13 @@ class TimedEventManager:
         repeat: str | None,
         interval: int | None,
         user_id: str | None,
+        weekdays: list[str] | None = None,
     ) -> dict[str, Any]:
         """Create a new timer and return it.
 
         repeat is None (one-shot), "interval" (every `interval` seconds) or
-        "daily" (same local wall-clock time every day).
+        "daily" (same local wall-clock time every day, optionally only on
+        `weekdays`, e.g. ["mon", "fri"]).
         """
         timer = {
             "id": uuid.uuid4().hex,
@@ -96,6 +98,7 @@ class TimedEventManager:
             "fire_at": dt_util.as_utc(fire_at).isoformat(),
             "repeat": repeat,
             "interval": interval,
+            "weekdays": weekdays,
             "user_id": user_id,
         }
         self._timers[timer["id"]] = timer
@@ -190,13 +193,21 @@ class TimedEventManager:
         return {"timers": list(self._timers.values())}
 
 
+WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
 def next_fire_at(timer: dict[str, Any], now: datetime) -> datetime:
-    """Next run of a repeating timer after `now` (missed runs are skipped)."""
+    """Next run of a repeating timer after `now` (missed runs are skipped).
+
+    For daily timers, `fire_at` itself counts if it is after `now` and on an
+    allowed weekday.
+    """
     fire_at = dt_util.parse_datetime(timer["fire_at"])
     if timer["repeat"] == "daily":
+        days = {WEEKDAYS.index(d) for d in timer.get("weekdays") or WEEKDAYS}
         # Step in local time so the wall-clock time stays fixed across DST changes.
         local = dt_util.as_local(fire_at)
-        while dt_util.as_utc(local) <= now:
+        while dt_util.as_utc(local) <= now or local.weekday() not in days:
             local = (local.replace(tzinfo=None) + timedelta(days=1)).replace(
                 tzinfo=local.tzinfo
             )

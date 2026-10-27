@@ -8,6 +8,8 @@ It lets you run an action on that entity **in X minutes or hours** or **at a dat
   today, or tomorrow if that time has already passed. *Choose date* opens HA's date picker for other days.
 * **Repeat:** with *In*, the action repeats every X minutes/hours; with *At*, it repeats every day at
   that time (stays at the same local time across DST changes). Repeats skip runs missed while HA was down.
+* **Weekdays:** with *At* + *Repeat*, tap the day buttons (Mo … Su) to choose on which weekdays it runs,
+  e.g. only Mon–Fri at 06:30.
 
 * Timers run in the **backend**, so they still fire when the browser is closed and survive HA restarts
   (overdue timers fire right after startup).
@@ -57,6 +59,7 @@ data:
   delay: "02:00:00"          # or {hours: 2} or seconds
   # at: "2026-10-27 07:00:00" # instead of delay: run at this time
   # repeat: true              # delay → every 2 h; at → daily at 07:00
+  # weekdays: [mon, tue, wed, thu, fri]  # only with at + repeat
   data: {}                   # optional extra data, e.g. {brightness_pct: 40}
 response_variable: result    # optional, contains result.timer.id
 ```

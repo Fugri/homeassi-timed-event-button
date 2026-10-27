@@ -1,7 +1,7 @@
 """Constants for the Timed Event integration."""
 
 DOMAIN = "timed_event"
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 
 STORAGE_KEY = f"{DOMAIN}.timers"
 STORAGE_VERSION = 1
@@ -18,6 +18,7 @@ ATTR_DELAY = "delay"
 ATTR_AT = "at"
 ATTR_REPEAT = "repeat"
 ATTR_TIMER_ID = "timer_id"
+ATTR_WEEKDAYS = "weekdays"
 
 EVENT_EXECUTED = f"{DOMAIN}_executed"
 EVENT_FAILED = f"{DOMAIN}_failed"

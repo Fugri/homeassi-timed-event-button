@@ -29,6 +29,21 @@ schedule:
       default: false
       selector:
         boolean:
+    weekdays:
+      required: false
+      example: '["mon", "tue", "wed", "thu", "fri"]'
+      selector:
+        select:
+          multiple: true
+          mode: list
+          options:
+            - mon
+            - tue
+            - wed
+            - thu
+            - fri
+            - sat
+            - sun
 
 cancel:
   fields:

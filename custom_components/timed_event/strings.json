@@ -38,6 +38,10 @@
         "repeat": {
           "name": "Repeat",
           "description": "Repeat every delay interval, or daily when at is used."
+        },
+        "weekdays": {
+          "name": "Weekdays",
+          "description": "Only with 'at' and repeat: run only on these days."
         }
       }
     },

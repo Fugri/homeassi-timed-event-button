@@ -37,6 +37,8 @@
       repeat_daily: "Repeat every day at {time}",
       every: "every {time}",
       daily: "daily {time}",
+      repeat_days: "Repeat on {days} at {time}",
+      no_days: "Pick at least one weekday",
       schedule: "Schedule",
       close: "Close",
       pending: "Scheduled",
@@ -97,6 +99,8 @@
       repeat_daily: "Täglich um {time} wiederholen",
       every: "alle {time}",
       daily: "täglich {time}",
+      repeat_days: "Wiederholen am {days} um {time}",
+      no_days: "Bitte mindestens einen Wochentag wählen",
       schedule: "Planen",
       close: "Schließen",
       pending: "Geplant",
@@ -315,6 +319,29 @@
   const pad2 = (n) => String(n).padStart(2, "0");
   const dateStr = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
+  // Backend weekday keys, Monday first (like Python's weekday()).
+  const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+  const weekdayKey = (d) => WEEKDAYS[(d.getDay() + 6) % 7];
+
+  // Localized short names, Monday first ("Mo", "Di", …).
+  function weekdayNames(hass) {
+    const loc = hass.locale?.language || hass.language;
+    return WEEKDAYS.map((_, i) => {
+      const d = new Date(2024, 0, 1 + i); // 2024-01-01 was a Monday
+      try {
+        return d.toLocaleDateString(loc, { weekday: "short" }).replace(/\.$/, "");
+      } catch {
+        return WEEKDAYS[i];
+      }
+    });
+  }
+
+  // "Mo, Mi, Fr" for a subset of weekday keys.
+  const formatDays = (hass, keys) => {
+    const names = weekdayNames(hass);
+    return WEEKDAYS.map((k, i) => (keys.includes(k) ? names[i] : null)).filter(Boolean).join(", ");
+  };
+
   // "Today" / "Tomorrow" / "Thu, 30 Oct"
   function dayLabel(hass, d) {
     const today = new Date();
@@ -389,6 +416,9 @@
       background: transparent; color: var(--primary-text-color); border: 1px solid var(--divider-color, rgba(127,127,127,.4));
     }
     .chip:hover { border-color: var(--primary-color); color: var(--primary-color); }
+    .days { display: flex; gap: 6px; margin-top: 10px; }
+    .days .chip { flex: 1; padding: 6px 0; text-align: center; min-width: 0; }
+    .days .chip.on { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
     .dateline { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 14px; }
     .dateline .day { flex: 1; color: var(--secondary-text-color); }
     .link { font: inherit; font-size: 14px; background: none; border: none; color: var(--primary-color); cursor: pointer; padding: 4px 0; }
@@ -426,6 +456,7 @@
       const next = new Date(Math.ceil(Date.now() / 3600000) * 3600000);
       this._time = `${pad2(next.getHours())}:00`; // "HH:MM", local
       this._date = null; // "YYYY-MM-DD", or null = next occurrence of _time
+      this._days = new Set(WEEKDAYS); // weekdays for "At" + repeat
       this._tick = null;
       this._onStore = () => this._renderPending();
       // Keep typing from triggering HA's global keyboard shortcuts.
@@ -548,6 +579,9 @@
           </div>
           <div>
             <label class="check"><input type="checkbox" id="repeat"><span id="repeatLabel"></span></label>
+            <div class="days" id="days">${weekdayNames(hass)
+              .map((n, i) => `<button class="chip${this._days.has(WEEKDAYS[i]) ? " on" : ""}" data-day="${WEEKDAYS[i]}">${esc(n)}</button>`)
+              .join("")}</div>
             <div class="hint" id="preview"></div>
           </div>
           <div class="error" id="error"></div>
@@ -587,6 +621,16 @@
         this._updatePreview();
       });
       this._$("#dateToggle").addEventListener("click", () => this._toggleDate());
+      this._$("#days").addEventListener("click", (ev) => {
+        const chip = ev.target.closest("[data-day]");
+        if (!chip) return;
+        const day = chip.dataset.day;
+        if (this._days.has(day)) this._days.delete(day);
+        else this._days.add(day);
+        chip.classList.toggle("on", this._days.has(day));
+        this._showError("");
+        this._updatePreview();
+      });
       this._$("#pending").addEventListener("click", (ev) => {
         const btn = ev.target.closest("[data-cancel]");
         if (btn) this._cancelTimer(btn.dataset.cancel);
@@ -712,10 +756,11 @@
       }
       const at = this._atDate();
       if (!at) return null;
-      if (at > Date.now()) return at;
-      if (!this._$("#repeat")?.checked) return null;
-      const next = new Date(at); // daily repeat from a past date: next occurrence
-      while (next <= Date.now()) next.setDate(next.getDate() + 1);
+      if (!this._$("#repeat")?.checked) return at > Date.now() ? at : null;
+      if (!this._days.size) return null;
+      // Daily repeat: first occurrence in the future on an allowed weekday.
+      const next = new Date(at);
+      while (next <= Date.now() || !this._days.has(weekdayKey(next))) next.setDate(next.getDate() + 1);
       return next;
     }
 
@@ -729,9 +774,16 @@
         label.textContent = s > 0 ? this._t("repeat_interval", { time: formatInterval(s) }) : this._t("repeat");
       } else {
         const at = this._atDate();
-        label.textContent = at ? this._t("repeat_daily", { time: formatClock(hass, at, true) }) : this._t("repeat");
+        const time = at ? formatClock(hass, at, true) : "";
+        const subset = this._days.size > 0 && this._days.size < WEEKDAYS.length;
+        label.textContent = !at
+          ? this._t("repeat")
+          : subset
+            ? this._t("repeat_days", { days: formatDays(hass, [...this._days]), time })
+            : this._t("repeat_daily", { time });
         this._$("#dayText").textContent = at ? dayLabel(hass, at) : "";
       }
+      this._$("#days").hidden = !(this._mode === "at" && this._$("#repeat").checked);
       const next = this._nextRun();
       el.textContent = next ? this._t("runs_at", { time: `${dayLabel(hass, next)}, ${formatClock(hass, next, true)}` }) : "";
     }
@@ -763,7 +815,9 @@
           const rep = tm.repeat
             ? `<span class="rep">↻ ${esc(
                 tm.repeat === "daily"
-                  ? this._t("daily", { time: formatClock(hass, at, true) })
+                  ? tm.weekdays?.length
+                    ? `${formatDays(hass, tm.weekdays)} ${formatClock(hass, at, true)}`
+                    : this._t("daily", { time: formatClock(hass, at, true) })
                   : this._t("every", { time: formatInterval(tm.interval) })
               )}</span>`
             : "";
@@ -825,7 +879,9 @@
       } else {
         const at = this._atDate();
         if (!at || (!repeat && at <= Date.now())) return this._showError(this._t("invalid_at"));
+        if (repeat && !this._days.size) return this._showError(this._t("no_days"));
         when.at = at.toISOString();
+        if (repeat && this._days.size < WEEKDAYS.length) when.weekdays = WEEKDAYS.filter((d) => this._days.has(d));
       }
 
       const data = {};
