@@ -390,7 +390,7 @@
   // ---------------------------------------------------------------------------
 
   const PANEL_CSS = `
-    :host { display: block; }
+    :host { display: block; padding: 0 var(--ha-space-6, 24px) var(--ha-space-4, 16px); }
     .body { display: flex; flex-direction: column; gap: 16px; padding: 8px 0; }
     label { display: block; font-size: 12px; color: var(--secondary-text-color); margin-bottom: 4px; }
     select, input:not([type="checkbox"]) {
@@ -937,14 +937,14 @@
     .badge[hidden] { display: none; }
     /* Fallback for HA versions without more-info child views */
     dialog {
-      border: none; padding: 16px 24px; border-radius: var(--ha-dialog-border-radius, 24px);
+      border: none; padding: 16px 0; border-radius: var(--ha-dialog-border-radius, 24px);
       width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; box-sizing: border-box;
       background: var(--ha-dialog-surface-background, var(--card-background-color, #1c1c1c));
       color: var(--primary-text-color); box-shadow: 0 8px 32px rgba(0,0,0,.5);
       font-family: var(--ha-font-family-body, Roboto, sans-serif);
     }
     dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
-    .title { font-size: 20px; font-weight: 500; }
+    .title { font-size: 20px; font-weight: 500; padding: 0 24px; }
   `;
 
   class TimedEventButton extends HTMLElement {
